@@ -11,25 +11,27 @@ type CallbackStruct = [
 
 export class GitHubClientDeliver {
   private _callbacks: CallbackStruct[];
-  private _running: string;
+  private _running: string | null;
 
   private _immediateCallbacks: CallbackStruct[];
-  private _immediateRunning: string;
+  private _immediateRunning: string | null;
 
   constructor() {
     this._callbacks = [];
+    this._running = null;
     this._immediateCallbacks = [];
+    this._immediateRunning = null;
     this._run();
   }
 
-  push(callback, name = null) {
+  push(callback, name = null): Promise<any> {
     return new Promise((resolve, reject)=>{
       this._callbacks.push([callback, resolve, reject, name]);
       if (!this._running) this._run();
     });
   }
 
-  pushImmediate(callback, name = null) {
+  pushImmediate(callback, name = null): Promise<any> {
     return new Promise((resolve, reject)=>{
       this._immediateCallbacks.push([callback, resolve, reject, name]);
       if (!this._immediateRunning) this._immediateRun();

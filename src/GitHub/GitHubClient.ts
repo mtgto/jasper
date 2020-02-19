@@ -10,7 +10,7 @@ import Identifier from '../Util/Identifier';
 
 interface Response {
   body: any;
-  headers: any;
+  headers: http.IncomingHttpHeaders;
   statusCode: number;
 }
 
@@ -22,7 +22,7 @@ export default class GitHubClient {
   private readonly _userAgent: string;
   private readonly _name: string;
 
-  constructor(accessToken, host, pathPrefix, https = true){
+  constructor(accessToken, host, pathPrefix, https: boolean = true) {
     if (!accessToken || !host) {
       Logger.e('invalid access token or host');
       process.exit(1);
@@ -36,65 +36,67 @@ export default class GitHubClient {
     this._name = `GitHubClient:${Identifier.getId()}`;
   }
 
-  requestImmediate(path, query?) {
+  requestImmediate(path: string, query?: {[key: string]: string | number}): Promise<Response> {
     return GitHubClientDeliver.pushImmediate((resolve, reject)=> {
       this._request(path, query).then(resolve).catch(reject);
-    }, this._name) as Promise<Response>;
+    }, this._name);
   }
 
-  request(path, query?) {
+  request(path: string, query?: {[key: string]: string | number}): Promise<Response> {
     return GitHubClientDeliver.push((resolve, reject)=> {
       this._request(path, query).then(resolve).catch(reject);
-    }, this._name) as Promise<Response>;
+    }, this._name);
   }
 
-  cancel() {
+  cancel(): void {
     GitHubClientDeliver.cancel(this._name);
   }
 
-  _request(path, query) {
-    return new Promise((resolve, reject)=>{
-      let requestPath = _path.normalize(`/${this._pathPrefix}/${path}`);
-      requestPath = requestPath.replace(/\\/g, '/'); // for windows
+  _request(path: string, query: {[key: string]: string | number} | undefined): Promise<Response> {
+    let requestPath = _path.normalize(`/${this._pathPrefix}/${path}`);
+    requestPath = requestPath.replace(/\\/g, '/'); // for windows
 
-      if (query) {
-        const queryString = Object.keys(query).map((k)=> `${k}=${encodeURIComponent(query[k])}`);
-        requestPath = `${requestPath}?${queryString.join('&')}`;
+    if (query) {
+      const queryString = Object.keys(query).map((k) => `${k}=${encodeURIComponent(query[k])}`);
+      requestPath = `${requestPath}?${queryString.join('&')}`;
+    }
+
+    const options: https.RequestOptions | http.RequestOptions = {
+      hostname: this._host,
+      port: this._https ? 443 : 80,
+      path: requestPath,
+      headers: {
+        'User-Agent': this._userAgent,
+        'Authorization': `token ${this._accessToken}`
       }
+    };
 
-      const options = {
-        hostname: this._host,
-        port: this._https ? 443 : 80,
-        path: requestPath,
-        headers: {
-          'User-Agent': this._userAgent,
-          'Authorization': `token ${this._accessToken}`
-        }
-      };
+    const httpModule = this._https ? https : http;
 
-      const httpModule = this._https ? https : http;
-
-      this._log(path, query);
+    this._log(path, query);
+    return new Promise<Response>((resolve, reject)=>{
       const req = httpModule.request(
         options,
-        this._onResponse.bind(this, resolve, reject, options)
-      ).on('error', (e)=> reject(e));
+        this._onResponse.bind(this, resolve, reject, requestPath)
+      ).on('error', (e: Error) => {
+        reject(e);
+      });
 
       req.end();
     });
   }
 
-  async _onResponse(resolve, reject, requestOptions, res) {
+  async _onResponse(resolve: (value?: Response | PromiseLike<Response>) => void, reject: (reason?: any) => void, path: string, res: http.IncomingMessage): Promise<void> {
     let body = '';
     const statusCode = res.statusCode;
     const headers = res.headers;
 
     // github.com has rate limit, but ghe does not have rate limit
     if (headers['x-ratelimit-limit']) {
-      const remaining = 1 * headers['x-ratelimit-remaining'];
-      Logger.n(`[rate limit remaining] ${remaining} ${requestOptions.path}`);
+      const remaining = Number(headers['x-ratelimit-remaining']);
+      Logger.n(`[rate limit remaining] ${remaining} ${path}`);
       if (remaining === 0) {
-        const resetTime = headers['x-ratelimit-reset'] * 1000;
+        const resetTime = Number(headers['x-ratelimit-reset']) * 1000;
         const waitMilli = resetTime - Date.now();
         await Timer.sleep(waitMilli);
       }
@@ -121,7 +123,7 @@ export default class GitHubClient {
     res.resume();
   }
 
-  _log(path, query) {
+  _log(path: string, query: {[key: string]: string | number} | undefined): void {
     if (query) {
       const queryString = Object.keys(query).map((k)=> `${k}=${query[k]}`);
       Logger.n(`[request] ${path}?${queryString.join('&')}`);
@@ -130,8 +132,8 @@ export default class GitHubClient {
     }
   }
 
-  _getUserAgent() {
-    let version;
+  _getUserAgent(): string {
+    let version: string;
     if (electron.app) {
       version = electron.app.getVersion();
     } else {

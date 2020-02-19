@@ -21,7 +21,7 @@ export class IssuesTable {
     const updatedIds = [];
 
     for (const issue of issues) {
-      const paths = issue.url.split('/').reverse();
+      const paths: string[] = issue.url.split('/').reverse();
       const user = paths[3];
       const repo = `${paths[3]}/${paths[2]}`;
 
